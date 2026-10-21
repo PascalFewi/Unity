@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Perception.Randomization.Randomizers;
 
@@ -16,6 +17,15 @@ public class YZRandomizer : Randomizer
     public float maxOffsetz = 0.1f;
 
 
+    // Each object's position before the first offset. Offsets are applied to this,
+    // not to the current position, so they don't accumulate into a random walk.
+    Dictionary<Transform, Vector3> originalPositions;
+
+    protected override void OnScenarioStart()
+    {
+        originalPositions = new Dictionary<Transform, Vector3>();
+    }
+
     protected override void OnIterationStart()
     {
         var tags = tagManager.Query<YZRandomizerTag>();
@@ -25,7 +35,11 @@ public class YZRandomizer : Randomizer
             var obj = tag.transform;
 
             // Store original position safely per object
-            Vector3 basePos = obj.position;
+            if (!originalPositions.TryGetValue(obj, out Vector3 basePos))
+            {
+                basePos = obj.position;
+                originalPositions[obj] = basePos;
+            }
 
             float offsety = UnityEngine.Random.Range(minOffsety, maxOffsety);
             float offsetz = UnityEngine.Random.Range(minOffsetz, maxOffsetz);
