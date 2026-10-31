@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Perception.GroundTruth.LabelManagement;
 using UnityEngine.Perception.Randomization.Randomizers;
 
 /// <summary>
@@ -70,6 +72,25 @@ public class HumanoidCameraRandomizer : Randomizer
     // Camera reference
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Validity checks (all off by default = original behaviour)
+    // -------------------------------------------------------------------------
+
+    [Header("Validity Checks")]
+    [Tooltip("Camera height is measured from the ground below the camera instead of world Y = 0.")]
+    public bool heightAboveGround = false;
+    [Tooltip("Objects that count as ground for heightAboveGround (highest hit wins).")]
+    public List<string> groundObjects = new List<string> { "Terrain", "field" };
+
+    [Tooltip("Reject positions outside x in [-fieldHalfLength, fieldHalfLength] and z in [0, fieldWidth].")]
+    public bool stayOnField = false;
+
+    [Tooltip("Minimum distance from the camera to any labeled object (robots, humans, balls, ...). 0 = off.")]
+    public float minClearance = 0f;
+
+    [Tooltip("Positions tried per iteration before giving up and keeping the last one.")]
+    public int maxTries = 30;
+
     [Header("Camera Transform")]
     [Tooltip("Transform to randomize. Leave null to auto-find Camera.main.")]
     public Transform cameraTransform;
@@ -94,8 +115,67 @@ public class HumanoidCameraRandomizer : Randomizer
     {
         if (cameraTransform == null) return;
 
-        RandomizePosition();
+        CollectObstacles();
+        bool valid = false;
+        for (int attempt = 0; attempt < Mathf.Max(1, maxTries) && !valid; attempt++)
+        {
+            RandomizePosition();
+            valid = IsValidPosition(cameraTransform.position);
+        }
+        if (!valid)
+            Debug.LogWarning("[HumanoidCameraRandomizer] No valid camera position found, keeping the last one.");
+
         RandomizeRotation();
+    }
+
+    // -------------------------------------------------------------------------
+    // Validity
+    // -------------------------------------------------------------------------
+
+    readonly List<Bounds> m_Obstacles = new List<Bounds>();
+
+    void CollectObstacles()
+    {
+        m_Obstacles.Clear();
+        if (minClearance <= 0f) return;
+
+        foreach (var labeling in UnityEngine.Object.FindObjectsByType<Labeling>(FindObjectsSortMode.None))
+        {
+            var renderers = labeling.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) continue;
+            var bounds = renderers[0].bounds;
+            foreach (var r in renderers)
+                bounds.Encapsulate(r.bounds);
+            m_Obstacles.Add(bounds);
+        }
+    }
+
+    bool IsValidPosition(Vector3 position)
+    {
+        if (stayOnField && (Mathf.Abs(position.x) > fieldHalfLength || position.z < 0f || position.z > fieldWidth))
+            return false;
+
+        foreach (var bounds in m_Obstacles)
+            if (bounds.SqrDistance(position) < minClearance * minClearance)
+                return false;
+        return true;
+    }
+
+    float GroundHeight(float x, float z)
+    {
+        var hits = Physics.RaycastAll(new Vector3(x, 100f, z), Vector3.down, 200f,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        float best = 0f;
+        bool found = false;
+        foreach (var hit in hits)
+        {
+            if (groundObjects.Contains(hit.collider.gameObject.name) && (!found || hit.point.y > best))
+            {
+                best = hit.point.y;
+                found = true;
+            }
+        }
+        return best;
     }
 
     // -------------------------------------------------------------------------
@@ -117,6 +197,8 @@ public class HumanoidCameraRandomizer : Randomizer
         float z = Gaussian(fieldWidth / 2f, fieldWidth / 6f);
         float x = Gaussian(0f, fieldHalfLength / 3f);
         float y = UnityEngine.Random.Range(cameraHeightMin, cameraHeightMax);
+        if (heightAboveGround)
+            y += GroundHeight(x, z);
         cameraTransform.position = new Vector3(x, y, z);
     }
 
