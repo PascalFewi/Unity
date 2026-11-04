@@ -15,7 +15,7 @@ MonoBehaviour:
   m_LabelEntries:
   - label: ball
     color: {r: 1, g: 0, b: 0, a: 1}
-  - label: goalpost
+  - label: goal
     color: {r: 1, g: 1, b: 0, a: 1}
   - label: robot
     color: {r: 0, g: 0, b: 1, a: 1}
@@ -27,4 +27,6 @@ MonoBehaviour:
     color: {r: 0, g: 1, b: 1, a: 1}
   - label: X-Intersection
     color: {r: 1, g: 0.5, b: 0, a: 1}
+  - label: turf
+    color: {r: 0, g: 0.5, b: 0, a: 1}
   skyColor: {r: 0, g: 0, b: 0, a: 1}
