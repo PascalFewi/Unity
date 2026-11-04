@@ -15,7 +15,10 @@ Results go to `<solo folder>_post`:
 | Path | Content |
 |---|---|
 | `labels/sequence.N.json` | All boxes of frame N. `origin` is the top-left corner and `dimension` is width and height, both in pixels. |
+| `masks/lines/sequence.N.png` | Field lines in white on black |
+| `masks/semantic_lines/sequence.N.png` | Perception's semantic mask with the field lines added |
 | `check_images/` | A sample of frames with the boxes drawn on, for checking by eye |
+| `check_lines/` | A sample of frames with the line mask drawn in red, for checking by eye |
 | `summary.json` | Frames processed and boxes per class |
 
 Use `--out <folder>` to choose another output folder.
@@ -27,6 +30,7 @@ Use `--out <folder>` to choose another output folder.
 | Step | What it does |
 |---|---|
 | `field_crossings` | Replaces Perception's crossing boxes with calculated ones, and adds `PenaltyPoint` |
+| `line_mask` | Creates a mask of the field lines |
 | `check_images` | Draws the boxes on a sample of frames. Keep it last so it shows the final boxes. |
 
 ### field_crossings
@@ -39,7 +43,13 @@ The crossing objects in the scene lie mostly below the grass, so Perception sees
 
 Objects without a label, such as boards and banners, don't count as covering a crossing.
 
-If the Decal Projector or its field image changes, update `data/field_layout.json`. If the height of the grass changes, update `ground_y` in `config.json`.
+If the Decal Projector or its field image changes, update `data/field_layout.json`. If the height of the grass changes, update `ground_y` under `field` in `config.json`.
+
+### line_mask
+
+The field lines are a decal, so Perception can't mask them. This step draws the lines from `data/field_layout.json` into each frame using the saved camera pose, then removes pixels covered by a labeled object in the semantic mask. Lines stay at least 1 pixel wide, so distant lines don't break up.
+
+Objects without a label, such as boards and banners, don't count as covering a line.
 
 ## Add a step
 

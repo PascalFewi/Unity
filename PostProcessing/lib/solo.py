@@ -18,6 +18,8 @@ class Frame:
         self.boxes = []
         self._instance_annotation = None
         self._instance_mask = None
+        self._semantic_annotation = None
+        self._semantic_mask = None
 
         for annotation in capture["annotations"]:
             kind = annotation["@type"]
@@ -33,19 +35,37 @@ class Frame:
                 ]
             elif "InstanceSegmentation" in kind:
                 self._instance_annotation = annotation
+            elif "SemanticSegmentation" in kind:
+                self._semantic_annotation = annotation
 
-    def project(self, point):
-        """World point (Unity coordinates) to (u, v) in pixels. None if behind the camera."""
+    def to_camera(self, point):
+        """World point (Unity coordinates) to camera coordinates. z is the distance ahead."""
         delta = [p - c for p, c in zip(point, self.capture["position"])]
-        x, y, z = _rotate_inverse(self.capture["rotation"], delta)
-        if z <= 0.05:
-            return None
+        return _rotate_inverse(self.capture["rotation"], delta)
+
+    def camera_to_pixel(self, point):
+        """Camera coordinates with z > 0 to (u, v) in pixels."""
+        x, y, z = point
         fx = self.capture["matrix"][0]
         fy = self.capture["matrix"][4]
         return (
             (0.5 + 0.5 * fx * x / z) * self.width,
             (0.5 - 0.5 * fy * y / z) * self.height,
         )
+
+    def project(self, point):
+        """World point (Unity coordinates) to (u, v) in pixels. None if behind the camera."""
+        camera = self.to_camera(point)
+        if camera[2] <= 0.05:
+            return None
+        return self.camera_to_pixel(camera)
+
+    def semantic_mask(self):
+        """Semantic segmentation image."""
+        if self._semantic_mask is None:
+            path = os.path.join(self.folder, self._semantic_annotation["filename"])
+            self._semantic_mask = png.read(path)
+        return self._semantic_mask
 
     def instance_mask(self):
         """Instance segmentation image, or None if this run has none."""
