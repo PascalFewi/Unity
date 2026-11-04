@@ -1,0 +1,16 @@
+{
+  "steps": ["field_crossings", "check_images"],
+
+  "field_crossings": {
+    "layout": "data/field_layout.json",
+    "ground_y": 0.5,
+    "box_fraction": 0.04,
+    "cover_window_px": 7,
+    "max_covered_fraction": 0.5,
+    "replace_labels": ["L-Intersection", "T-Intersection", "X-Intersection"]
+  },
+
+  "check_images": {
+    "max_images": 24
+  }
+}

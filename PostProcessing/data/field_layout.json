@@ -1,0 +1,27 @@
+{
+  "_comment": "Line centres measured on Assets/Material/whole_field (2).png, in pixels of the image scaled to 1400x990 (1 pixel = 1 cm on the field). The decal values come from the enabled Decal Projector in K1Scene: its centre = position + offset.",
+  "decal": {
+    "center_world_x": -0.28606,
+    "center_world_z": 3.357,
+    "center_pixel": [700.0, 495.0],
+    "pixels_per_meter": 100.0
+  },
+  "points": {
+    "L-Intersection": [
+      [94.3, 93.7], [1305.7, 93.7], [94.3, 896.3], [1305.7, 896.3],
+      [316.3, 227.4], [1083.7, 227.4], [316.3, 762.6], [1083.7, 762.6],
+      [175.0, 347.8], [1225.0, 347.8], [175.0, 642.2], [1225.0, 642.2]
+    ],
+    "T-Intersection": [
+      [700.0, 93.7], [700.0, 896.3],
+      [94.3, 227.4], [1305.7, 227.4], [94.3, 762.6], [1305.7, 762.6],
+      [94.3, 347.8], [1305.7, 347.8], [94.3, 642.2], [1305.7, 642.2]
+    ],
+    "X-Intersection": [
+      [700.0, 394.0], [700.0, 596.0]
+    ],
+    "PenaltyPoint": [
+      [269.2, 495.0], [1130.8, 495.0]
+    ]
+  }
+}
