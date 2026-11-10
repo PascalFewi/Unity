@@ -10,27 +10,50 @@ Needs Python 3.8 or newer. Nothing else has to be installed.
 python run_all.py <solo folder>
 ```
 
-Results go to `<solo folder>_post`:
+Results go to `<solo folder>_post`. If that folder already exists, add `--overwrite` to replace it. Use `--out <folder>` to choose another output folder.
+
+## Output
+
+Every frame has an id `<run>_<sequence>`, for example `solo_29_000012`, and the same file name in every folder.
 
 | Path | Content |
 |---|---|
-| `labels/sequence.N.json` | All boxes of frame N. `origin` is the top-left corner and `dimension` is width and height, both in pixels. |
-| `masks/lines/sequence.N.png` | Field lines in white on black |
-| `masks/semantic_lines/sequence.N.png` | Perception's semantic mask with the field lines added |
-| `check_images/` | A sample of frames with the boxes drawn on, for checking by eye |
-| `check_lines/` | A sample of frames with the line mask drawn in red, for checking by eye |
-| `summary.json` | Frames processed and boxes per class |
+| `images/<id>.png` | RGB image, copied from the SOLO run |
+| `labels/<id>.json` | Boxes and camera of the frame (see below) |
+| `segmentation/<id>.png` | Semantic mask: one colour per class, including the field lines. Colours are in `metadata.json`. |
+| `lines/<id>.png` | Field lines only: white = line, black = rest |
+| `checks/boxes/<id>.png` | Sample of frames with the boxes drawn on |
+| `checks/segmentation/<id>.png` | Sample of frames with the segmentation blended over the image |
+| `metadata.json` | Whole run: source, post-processing commit, frame count, boxes per class, segmentation colours, settings, Unity metadata |
 
-Use `--out <folder>` to choose another output folder.
+### labels/&lt;id&gt;.json
+
+```json
+{
+ "id": "solo_29_000012",
+ "image": "images/solo_29_000012.png",
+ "segmentation": "segmentation/solo_29_000012.png",
+ "width": 640, "height": 480,
+ "camera": {"position": [x, y, z], "rotation": [x, y, z, w], "matrix": [...]},
+ "boxes": [
+  {"labelName": "robot", "origin": [x, y], "dimension": [w, h], "source": "perception"},
+  {"labelName": "T-Intersection", "origin": [x, y], "dimension": [w, h], "point": [u, v], "source": "field_crossings"}
+ ]
+}
+```
+
+- `origin` is the top-left corner and `dimension` is width and height, both in pixels.
+- `point` is the exact crossing position; only crossings and penalty points have it.
+- `camera` is the Unity camera pose and projection, as saved by Perception.
 
 ## Steps
 
-`config.json` lists the steps in the order they run, and the settings of each step.
+`config.json` lists the steps in the order they run, and the settings of each step. Shared field settings are under `field`.
 
 | Step | What it does |
 |---|---|
 | `field_crossings` | Replaces Perception's crossing boxes with calculated ones, and adds `PenaltyPoint` |
-| `line_mask` | Creates a mask of the field lines |
+| `segmentation` | Adds the field lines to Perception's semantic mask and removes specks of the buried crossing objects |
 | `check_images` | Draws the boxes on a sample of frames. Keep it last so it shows the final boxes. |
 
 ### field_crossings
@@ -39,17 +62,16 @@ The crossing objects in the scene lie mostly below the grass, so Perception sees
 
 1. It projects each point in `data/field_layout.json` into the image, using the camera pose saved in the frame.
 2. It skips points outside the image, and points where more than half of a small window is covered by a labeled object.
-3. It adds a box of fixed size around the point: `box_fraction` of the image width and height. Each box also stores the exact `point`.
+3. It adds a box of fixed size around the point: `box_fraction` of the image width and height.
 
-Objects without a label, such as boards and banners, don't count as covering a crossing.
+### segmentation
 
-If the Decal Projector or its field image changes, update `data/field_layout.json`. If the height of the grass changes, update `ground_y` under `field` in `config.json`.
+The field lines from `data/field_layout.json` are drawn into each frame with the saved camera pose. Pixels covered by a labeled object are removed. Lines stay at least 1 pixel wide, so distant lines don't break up.
 
-### line_mask
+### Limits
 
-The field lines are a decal, so Perception can't mask them. This step draws the lines from `data/field_layout.json` into each frame using the saved camera pose, then removes pixels covered by a labeled object in the semantic mask. Lines stay at least 1 pixel wide, so distant lines don't break up.
-
-Objects without a label, such as boards and banners, don't count as covering a line.
+- Only labeled objects count as covering a crossing or a line, so boards and banners don't.
+- Positions match the field image and Decal Projector in `K1Scene`. If either changes, update `data/field_layout.json`. If the grass height changes, update `ground_y` under `field` in `config.json`.
 
 ## Add a step
 
@@ -65,4 +87,4 @@ Objects without a label, such as boards and banners, don't count as covering a l
 
 2. Add `"my_step"` to `steps` in `config.json`, in the position it should run, and add a `"my_step"` block with its settings.
 
-`frame` is defined in `lib/solo.py`. `context` gives access to `settings`, `out_dir`, `total_frames` and `base_dir`. Steps write any extra files to `context.out_dir`.
+`frame` is defined in `lib/solo.py`; `frame.id` is the frame id. `context` gives access to `settings`, `out_dir` and `total_frames`. Use `context.path(folder, frame, ".png")` for output files and `context.is_check_frame(frame)` to pick the check-image sample.

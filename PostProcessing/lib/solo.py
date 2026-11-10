@@ -60,6 +60,10 @@ class Frame:
             return None
         return self.camera_to_pixel(camera)
 
+    def semantic_classes(self):
+        """Classes in this frame's semantic mask: name -> (r, g, b, a)."""
+        return {i["labelName"]: i["pixelValue"] for i in self._semantic_annotation.get("instances", [])}
+
     def semantic_mask(self):
         """Semantic segmentation image."""
         if self._semantic_mask is None:

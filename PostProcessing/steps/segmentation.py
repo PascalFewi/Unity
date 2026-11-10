@@ -1,16 +1,16 @@
-"""Create a mask of the field lines, which Perception can't label because they are a decal.
+"""Build the final segmentation: Perception's semantic mask plus the field lines.
 
-Lines from the field layout are drawn into the image with the camera pose saved
-in the frame. Pixels covered by a labeled object are removed using the semantic
-mask. Distant lines are always drawn at least 1 pixel wide, so they stay unbroken.
+The field lines are a decal, so Perception can't mask them. They are drawn into
+each frame from the field layout with the saved camera pose, and pixels covered
+by a labeled object are removed. Distant lines stay at least 1 pixel wide.
+Leftover specks of the buried crossing objects are removed from the mask.
 
-Output, by sequence number:
-  masks/lines/             white lines on black
-  masks/semantic_lines/    Perception's semantic mask with the lines added
-  check_lines/             sample of frames with the lines drawn in red
+Writes per frame:
+  segmentation/<id>.png          semantic mask with the lines added
+  lines/<id>.png                 field lines only: white = line
+  checks/segmentation/<id>.png   (sample) segmentation blended over the image
 """
 import math
-import os
 
 from lib import field, png
 
@@ -126,44 +126,51 @@ def _line_pixels(mask):
 
 
 def process(frame, context):
-    settings = context.settings["line_mask"]
+    settings = context.settings["segmentation"]
     ground_y = context.settings["field"]["ground_y"]
     layout = field.load(context)
 
-    mask = png.Image(frame.width, frame.height, 1, bytearray(frame.width * frame.height))
+    lines = png.Image(frame.width, frame.height, 1, bytearray(frame.width * frame.height))
     for shape in _shapes(layout, settings["circle_segments"]):
-        _draw_shape(frame, mask, shape, ground_y)
+        _draw_shape(frame, lines, shape, ground_y)
 
     semantic = frame.semantic_mask()
-    combined = png.Image(frame.width, frame.height, semantic.channels, bytearray(semantic.pixels))
-    color = bytes(settings["line_color"])
     channels = semantic.channels
-    for position in _line_pixels(mask):
-        start = position * channels
-        if any(semantic.pixels[start:start + 3]):
-            mask.pixels[position] = 0
+    result = png.Image(frame.width, frame.height, channels, bytearray(semantic.pixels))
+
+    removed = set()
+    for name, color in frame.semantic_classes().items():
+        if name in settings["remove_labels"]:
+            removed.add(tuple(color[:3]))
         else:
-            combined.pixels[start:start + 3] = color
+            context.segmentation_classes[name] = list(color[:3])
+    if removed:
+        for start in range(0, len(result.pixels), channels):
+            if tuple(result.pixels[start:start + 3]) in removed:
+                result.pixels[start:start + 3] = b"\x00\x00\x00"
 
-    _write(context, "lines", frame, mask)
-    _write(context, "semantic_lines", frame, combined)
-    _write_check(frame, mask, context)
+    line_color = bytes(settings["line_color"])
+    context.segmentation_classes[settings["line_label"]] = list(settings["line_color"])
+    for position in _line_pixels(lines):
+        start = position * channels
+        if any(result.pixels[start:start + 3]):
+            lines.pixels[position] = 0
+        else:
+            result.pixels[start:start + 3] = line_color
+
+    png.write(context.path("segmentation", frame, ".png"), result)
+    png.write(context.path("lines", frame, ".png"), lines)
+    if context.is_check_frame(frame):
+        _write_check(frame, result, context)
 
 
-def _write(context, name, frame, image):
-    folder = os.path.join(context.out_dir, "masks", name)
-    os.makedirs(folder, exist_ok=True)
-    png.write(os.path.join(folder, f"sequence.{frame.sequence}.png"), image)
-
-
-def _write_check(frame, mask, context):
-    limit = context.settings["check_images"]["max_images"]
-    if frame.sequence % max(1, context.total_frames // limit) != 0:
-        return
+def _write_check(frame, segmentation, context):
     image = png.read(frame.image_path)
-    for position in _line_pixels(mask):
-        start = position * image.channels
-        image.pixels[start:start + 3] = b"\xff\x00\x00"
-    folder = os.path.join(context.out_dir, "check_lines")
-    os.makedirs(folder, exist_ok=True)
-    png.write(os.path.join(folder, f"sequence.{frame.sequence}.png"), image)
+    sc, ic = segmentation.channels, image.channels
+    for i in range(frame.width * frame.height):
+        s = i * sc
+        color = segmentation.pixels[s:s + 3]
+        if any(color):
+            p = i * ic
+            image.pixels[p:p + 3] = bytes((a + b) // 2 for a, b in zip(image.pixels[p:p + 3], color))
+    png.write(context.path("checks/segmentation", frame, ".png"), image)

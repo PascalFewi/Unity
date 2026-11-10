@@ -1,5 +1,5 @@
 {
-  "steps": ["field_crossings", "line_mask", "check_images"],
+  "steps": ["field_crossings", "segmentation", "check_images"],
 
   "field": {
     "layout": "data/field_layout.json",
@@ -13,12 +13,14 @@
     "replace_labels": ["L-Intersection", "T-Intersection", "X-Intersection"]
   },
 
-  "line_mask": {
+  "segmentation": {
+    "line_label": "field_line",
     "line_color": [255, 255, 255],
+    "remove_labels": ["L-Intersection", "T-Intersection", "X-Intersection"],
     "circle_segments": 96
   },
 
-  "check_images": {
+  "checks": {
     "max_images": 24
   }
 }

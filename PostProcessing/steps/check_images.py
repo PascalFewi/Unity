@@ -1,6 +1,4 @@
-"""Save copies of a few frames with all boxes drawn on them, for checking by eye."""
-import os
-
+"""Save a sample of frames with all boxes drawn on them, for checking by eye."""
 from lib import png
 
 _COLORS = {
@@ -33,15 +31,9 @@ def _set(image, x, y, color):
 
 
 def process(frame, context):
-    limit = context.settings["check_images"]["max_images"]
-    step = max(1, context.total_frames // limit)
-    if frame.sequence % step != 0:
+    if not context.is_check_frame(frame):
         return
-
     image = png.read(frame.image_path)
     for box in frame.boxes:
         _draw_box(image, box, _COLORS.get(box["labelName"], (200, 200, 200)))
-
-    folder = os.path.join(context.out_dir, "check_images")
-    os.makedirs(folder, exist_ok=True)
-    png.write(os.path.join(folder, f"sequence.{frame.sequence}.png"), image)
+    png.write(context.path("checks/boxes", frame, ".png"), image)
