@@ -20,10 +20,14 @@ class Frame:
         self._instance_mask = None
         self._semantic_annotation = None
         self._semantic_mask = None
+        self.depth_path = None
+        self.depth_output = None
 
         for annotation in capture["annotations"]:
             kind = annotation["@type"]
-            if "BoundingBox2D" in kind:
+            if "DepthAnnotation" in kind:
+                self.depth_path = os.path.join(self.folder, annotation["filename"])
+            elif "BoundingBox2D" in kind:
                 self.boxes = [
                     {
                         "labelName": v["labelName"],

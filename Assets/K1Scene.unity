@@ -4330,6 +4330,7 @@ MonoBehaviour:
   - rid: 1947495829066744028
   - rid: 1947495848182284353
   - rid: 7664683968931823684
+  - rid: 5854776530449727488
   m_LayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -4383,6 +4384,12 @@ MonoBehaviour:
         annotationId: bounding box 3D
         idLabelConfig: {fileID: 11400000, guid: 62b9f00cdc79a485fbc4c687c48fccc4, type: 2}
         visualizationColor: {r: 0, g: 1, b: 0, a: 1}
+    - rid: 5854776530449727488
+      type: {class: DepthLabeler, ns: UnityEngine.Perception.GroundTruth.Labelers, asm: Unity.Perception.Runtime}
+      data:
+        enabled: 1
+        annotationId: Depth
+        measurementStrategy: 0
     - rid: 7664683968931823684
       type: {class: InstanceSegmentationLabeler, ns: UnityEngine.Perception.GroundTruth.Labelers, asm: Unity.Perception.Runtime}
       data:

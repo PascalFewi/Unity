@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 1704
     height: 1340.6667
   m_ShowMode: 4
-  m_Title: Console
+  m_Title: Scene
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -770,9 +770,9 @@ MonoBehaviour:
     speed: 2
     m_Value: {x: -0.49028236, y: 0.5094876, z: -0.50832975, w: -0.4919319}
   m_Size:
-    m_Target: 2.8614545
+    m_Target: 3.886823
     speed: 2
-    m_Value: 2.8614545
+    m_Value: 3.886823
   m_Ortho:
     m_Target: 1
     speed: 2

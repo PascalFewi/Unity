@@ -1,5 +1,5 @@
 {
-  "steps": ["field_crossings", "segmentation", "check_images"],
+  "steps": ["field_crossings", "segmentation", "depth", "check_images"],
 
   "field": {
     "layout": "data/field_layout.json",
@@ -18,6 +18,10 @@
     "line_color": [255, 255, 255],
     "remove_labels": ["L-Intersection", "T-Intersection", "X-Intersection"],
     "circle_segments": 96
+  },
+
+  "depth": {
+    "clip_percent": 1
   },
 
   "checks": {

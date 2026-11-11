@@ -26,6 +26,7 @@ FOLDERS = {
     "labels": "One JSON per frame: boxes and camera",
     "segmentation": "Semantic mask per frame; colours are listed under segmentation_classes",
     "lines": "Field lines per frame: white = line",
+    "depth": "Depth per frame for ControlNet: 8-bit grey, inverse depth scaled per image, near = white, sky = black",
     "checks/boxes": "Sample of frames with the boxes drawn on",
     "checks/segmentation": "Sample of frames with the segmentation blended over the image",
 }
@@ -109,6 +110,7 @@ def main():
                     "id": frame.id,
                     "image": f"images/{frame.id}.png",
                     "segmentation": f"segmentation/{frame.id}.png",
+                    "depth": frame.depth_output,
                     "width": frame.width,
                     "height": frame.height,
                     "camera": {
