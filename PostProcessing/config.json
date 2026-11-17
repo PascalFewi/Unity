@@ -16,6 +16,9 @@
   "segmentation": {
     "line_label": "field_line",
     "line_color": [255, 255, 255],
+    "pitch_label": "pitch",
+    "pitch_color": [0, 128, 0],
+    "pitch_tolerance_m": 0.03,
     "remove_labels": ["L-Intersection", "T-Intersection", "X-Intersection"],
     "circle_segments": 96
   },

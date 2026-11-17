@@ -4,7 +4,7 @@ import json
 import os
 import re
 
-from lib import png
+from lib import exr, png
 
 
 class Frame:
@@ -22,6 +22,7 @@ class Frame:
         self._semantic_mask = None
         self.depth_path = None
         self.depth_output = None
+        self._depth = None
 
         for annotation in capture["annotations"]:
             kind = annotation["@type"]
@@ -64,6 +65,19 @@ class Frame:
             return None
         return self.camera_to_pixel(camera)
 
+    def depth(self):
+        """Depth image as (width, height, floats in meters, 0 = nothing hit), or None if this run has none."""
+        if self.depth_path is None:
+            return None
+        if self._depth is None:
+            self._depth = exr.read_channel(self.depth_path, "R")
+        return self._depth
+
+    def camera_axes(self):
+        """The camera's right, up and forward directions in world coordinates."""
+        q = self.capture["rotation"]
+        return [_rotate(q, axis) for axis in ((1, 0, 0), (0, 1, 0), (0, 0, 1))]
+
     def semantic_classes(self):
         """Classes in this frame's semantic mask: name -> (r, g, b, a)."""
         return {i["labelName"]: i["pixelValue"] for i in self._semantic_annotation.get("instances", [])}
@@ -92,7 +106,12 @@ class Frame:
 
 def _rotate_inverse(q, v):
     # Rotate v by the conjugate of quaternion q = (x, y, z, w).
-    x, y, z, w = -q[0], -q[1], -q[2], q[3]
+    return _rotate((-q[0], -q[1], -q[2], q[3]), v)
+
+
+def _rotate(q, v):
+    # Rotate v by quaternion q = (x, y, z, w).
+    x, y, z, w = q
     tx = 2 * (y * v[2] - z * v[1])
     ty = 2 * (z * v[0] - x * v[2])
     tz = 2 * (x * v[1] - y * v[0])

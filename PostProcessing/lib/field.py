@@ -12,6 +12,7 @@ class Layout:
         self._center_z = decal["center_world_z"]
         self._center_u, self._center_v = decal["center_pixel"]
         self._scale = decal["pixels_per_meter"]
+        self._size_u, self._size_v = decal["size_pixels"]
         self.points = data["points"]
         self.line_width = data["line_width_m"]
         self.lines = data["lines"]
@@ -24,6 +25,12 @@ class Layout:
             self._center_x + (u - self._center_u) / self._scale,
             self._center_z + (self._center_v - v) / self._scale,
         )
+
+    def pitch_bounds(self):
+        """Grass area in world coordinates: (min x, max x, min z, max z)."""
+        x0, z1 = self.to_world(0, 0)
+        x1, z0 = self.to_world(self._size_u, self._size_v)
+        return x0, x1, z0, z1
 
     def length(self, pixels):
         """Length in the field image to meters."""

@@ -5,13 +5,13 @@ to 0-255, near = white, far = dark. Pixels where nothing was hit (sky) are black
 """
 import array
 
-from lib import exr, png
+from lib import png
 
 
 def process(frame, context):
-    if frame.depth_path is None:
+    if frame.depth() is None:
         return
-    width, height, depth = exr.read_channel(frame.depth_path, "R")
+    width, height, depth = frame.depth()
 
     inverse = array.array("f", (1.0 / d if d > 0 else 0.0 for d in depth))
     hits = sorted(v for v in inverse if v > 0)

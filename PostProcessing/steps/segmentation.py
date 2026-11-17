@@ -4,10 +4,13 @@ The field lines are a decal, so Perception can't mask them. They are drawn into
 each frame from the field layout with the saved camera pose, and pixels covered
 by a labeled object are removed. Distant lines stay at least 1 pixel wide.
 Leftover specks of the buried crossing objects are removed from the mask.
+If the run has depth images, the visible grass is added as the pitch class
+(labeled objects win over lines, lines win over the pitch).
 
 Writes per frame:
-  segmentation/<id>.png          semantic mask with the lines added
+  segmentation/<id>.png          semantic mask with the lines and the pitch added
   lines/<id>.png                 field lines only: white = line
+  pitch/<id>.png                 visible grass including the lines: white = pitch (needs depth)
   checks/segmentation/<id>.png   (sample) segmentation blended over the image
 """
 import math
@@ -118,6 +121,47 @@ def _draw_shape(frame, mask, shape, ground_y):
         _draw_line(mask, frame.camera_to_pixel(center[0]), frame.camera_to_pixel(center[1]))
 
 
+def _pitch_mask(frame, layout, ground_y, tolerance):
+    """White where the visible surface is the grass: on the ground and inside the grass area.
+
+    Every pixel's world position comes from its depth and the camera pose, so anything
+    standing on the grass hides it, labeled or not. None if the run has no depth.
+    """
+    depth = frame.depth()
+    if depth is None:
+        return None
+    width, height, values = depth
+    min_x, max_x, min_z, max_z = layout.pitch_bounds()
+    right, up, forward = frame.camera_axes()
+    px, py, pz = frame.capture["position"]
+    fx, fy = frame.capture["matrix"][0], frame.capture["matrix"][4]
+
+    # World direction of each pixel's ray, scaled so that depth * direction = offset from the camera.
+    column = [((u + 0.5) / width - 0.5) * 2 / fx for u in range(width)]
+    mask = bytearray(width * height)
+    for v in range(height):
+        b = (0.5 - (v + 0.5) / height) * 2 / fy
+        row_x = forward[0] + b * up[0]
+        row_y = forward[1] + b * up[1]
+        row_z = forward[2] + b * up[2]
+        start = v * width
+        for u in range(width):
+            d = values[start + u]
+            if d <= 0:
+                continue
+            a = column[u]
+            if abs(py + d * (row_y + a * right[1]) - ground_y) > tolerance:
+                continue
+            x = px + d * (row_x + a * right[0])
+            z = pz + d * (row_z + a * right[2])
+            if min_x <= x <= max_x and min_z <= z <= max_z:
+                mask[start + u] = 255
+    return png.Image(width, height, 1, mask)
+
+
+_warned = []
+
+
 def _line_pixels(mask):
     position = mask.pixels.find(255)
     while position != -1:
@@ -157,6 +201,23 @@ def process(frame, context):
             lines.pixels[position] = 0
         else:
             result.pixels[start:start + 3] = line_color
+
+    pitch = _pitch_mask(frame, layout, ground_y, settings["pitch_tolerance_m"])
+    if pitch is None:
+        if not _warned:
+            print("No depth images in this run: the pitch is left out of the segmentation.")
+            _warned.append(True)
+    else:
+        pitch_color = bytes(settings["pitch_color"])
+        context.segmentation_classes[settings["pitch_label"]] = list(settings["pitch_color"])
+        for position in _line_pixels(pitch):
+            start = position * channels
+            color = result.pixels[start:start + 3]
+            if not any(color):
+                result.pixels[start:start + 3] = pitch_color
+            elif color != line_color:
+                pitch.pixels[position] = 0  # covered by a labeled object
+        png.write(context.path("pitch", frame, ".png"), pitch)
 
     png.write(context.path("segmentation", frame, ".png"), result)
     png.write(context.path("lines", frame, ".png"), lines)

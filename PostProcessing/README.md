@@ -20,8 +20,9 @@ Every frame has an id `<run>_<sequence>`, for example `solo_29_000012`, and the 
 |---|---|
 | `images/<id>.png` | RGB image, copied from the SOLO run |
 | `labels/<id>.json` | Boxes and camera of the frame (see below) |
-| `segmentation/<id>.png` | Semantic mask: one colour per class, including the field lines. Colours are in `metadata.json`. |
+| `segmentation/<id>.png` | Semantic mask: one colour per class, including the field lines and the pitch. Colours are in `metadata.json`. |
 | `lines/<id>.png` | Field lines only: white = line, black = rest |
+| `pitch/<id>.png` | Visible grass, field lines included: white = pitch, black = rest. Needs depth. |
 | `depth/<id>.png` | Depth for ControlNet: 8-bit grey, near = white, far = dark, sky = black |
 | `checks/boxes/<id>.png` | Sample of frames with the boxes drawn on |
 | `checks/segmentation/<id>.png` | Sample of frames with the segmentation blended over the image |
@@ -54,7 +55,7 @@ Every frame has an id `<run>_<sequence>`, for example `solo_29_000012`, and the 
 | Step | What it does |
 |---|---|
 | `field_crossings` | Replaces Perception's crossing boxes with calculated ones, and adds `PenaltyPoint` |
-| `segmentation` | Adds the field lines to Perception's semantic mask and removes specks of the buried crossing objects |
+| `segmentation` | Adds the field lines to Perception's semantic mask and removes specks of the buried crossing objects. With depth it also adds the visible grass as `pitch` (objects win over lines, lines over the pitch). |
 | `depth` | Turns Perception's depth EXR into an 8-bit greyscale PNG (inverse depth, scaled per image, nearest/farthest 1 % clipped). Needs the DepthLabeler on the camera. |
 | `check_images` | Draws the boxes on a sample of frames. Keep it last so it shows the final boxes. |
 

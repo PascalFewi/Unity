@@ -1,9 +1,10 @@
 {
-  "_comment": "Line centres measured on Assets/Material/whole_field (2).png, in pixels of the image scaled to 1400x990 (1 pixel = 1 cm on the field). The decal values come from the enabled Decal Projector in K1Scene: its centre = position + offset.",
+  "_comment": "Line centres measured on Assets/Material/whole_field (2).png, in pixels of the image scaled to 1400x990 (1 pixel = 1 cm on the field). The decal values come from the enabled Decal Projector in K1Scene: its centre = position + offset. The grass Terrain covers exactly the field image (size_pixels).",
   "decal": {
     "center_world_x": -0.28606,
     "center_world_z": 3.357,
     "center_pixel": [700.0, 495.0],
+    "size_pixels": [1400, 990],
     "pixels_per_meter": 100.0
   },
   "points": {
