@@ -1,15 +1,17 @@
 """Run every post-processing step on one Perception SOLO run.
 
-Usage:  python run_all.py <solo folder> [--out <folder>] [--overwrite]
+Usage:  python run_all.py <solo folder> [--out <folder>] [--overwrite] [--workers N]
 
 The SOLO folder is only read. Results go to <solo folder>_post by default.
 Steps and their settings are listed in config.json.
+Frames are processed in parallel, one process per CPU thread by default.
 """
 import argparse
 import collections
 import datetime
 import importlib
 import json
+import multiprocessing
 import os
 import shutil
 import subprocess
@@ -68,11 +70,57 @@ def _git_commit():
         return None
 
 
+_worker = {}
+
+
+def _init_worker(settings, out_dir, total_frames, run_name):
+    """Runs once in every worker process."""
+    _worker["context"] = Context(settings, out_dir, total_frames)
+    _worker["steps"] = [importlib.import_module(f"steps.{name}") for name in settings["steps"]]
+    _worker["run_name"] = run_name
+
+
+def _process_frame(path):
+    """All steps on one frame, then its image and label file. None if the frame has no capture."""
+    context = _worker["context"]
+    frame = solo.read_frame(path)
+    if frame is None:
+        return None
+    frame.id = f"{_worker['run_name']}_{frame.sequence:06d}"
+    context.segmentation_classes = {}
+    for step in _worker["steps"]:
+        step.process(frame, context)
+
+    shutil.copyfile(frame.image_path, context.path("images", frame, ".png"))
+    with open(context.path("labels", frame, ".json"), "w", encoding="utf8") as f:
+        json.dump(
+            {
+                "id": frame.id,
+                "image": f"images/{frame.id}.png",
+                "segmentation": f"segmentation/{frame.id}.png",
+                "depth": frame.depth_output,
+                "width": frame.width,
+                "height": frame.height,
+                "camera": {
+                    "position": frame.capture["position"],
+                    "rotation": frame.capture["rotation"],
+                    "matrix": frame.capture["matrix"],
+                },
+                "boxes": frame.boxes,
+            },
+            f,
+            indent=1,
+        )
+    return [box["labelName"] for box in frame.boxes], context.segmentation_classes, frame.depth_path is not None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run all post-processing steps on a SOLO run.")
     parser.add_argument("solo_dir")
     parser.add_argument("--out", help="output folder (default: <solo_dir>_post)")
     parser.add_argument("--overwrite", action="store_true", help="delete an existing output folder first")
+    parser.add_argument("--workers", type=int, default=os.cpu_count() or 1,
+                        help="parallel processes (default: one per CPU thread; 1 = no parallelism)")
     args = parser.parse_args()
 
     solo_dir = os.path.abspath(args.solo_dir)
@@ -85,47 +133,41 @@ def main():
 
     with open(os.path.join(BASE_DIR, "config.json"), encoding="utf8") as f:
         settings = json.load(f)
-    steps = [importlib.import_module(f"steps.{name}") for name in settings["steps"]]
+    steps = [importlib.import_module(f"steps.{name}") for name in settings["steps"]]  # for finish()
 
     run_name = os.path.basename(solo_dir)
     paths = solo.frame_paths(solo_dir)
     context = Context(settings, out_dir, len(paths))
     counts = collections.Counter()
-    skipped = 0
+    skipped = without_depth = 0
     started = time.time()
 
-    for index, path in enumerate(paths, 1):
-        frame = solo.read_frame(path)
-        if frame is None:
-            skipped += 1
-            continue
-        frame.id = f"{run_name}_{frame.sequence:06d}"
-        for step in steps:
-            step.process(frame, context)
-
-        shutil.copyfile(frame.image_path, context.path("images", frame, ".png"))
-        counts.update(box["labelName"] for box in frame.boxes)
-        with open(context.path("labels", frame, ".json"), "w", encoding="utf8") as f:
-            json.dump(
-                {
-                    "id": frame.id,
-                    "image": f"images/{frame.id}.png",
-                    "segmentation": f"segmentation/{frame.id}.png",
-                    "depth": frame.depth_output,
-                    "width": frame.width,
-                    "height": frame.height,
-                    "camera": {
-                        "position": frame.capture["position"],
-                        "rotation": frame.capture["rotation"],
-                        "matrix": frame.capture["matrix"],
-                    },
-                    "boxes": frame.boxes,
-                },
-                f,
-                indent=1,
-            )
-        if index % 100 == 0:
-            print(f"{index}/{len(paths)} frames")
+    workers = max(1, min(args.workers, len(paths) or 1))
+    init = (settings, out_dir, len(paths), run_name)
+    if workers == 1:
+        _init_worker(*init)
+        results = map(_process_frame, paths)
+        pool = None
+    else:
+        pool = multiprocessing.Pool(workers, initializer=_init_worker, initargs=init)
+        results = pool.imap_unordered(_process_frame, paths, chunksize=4)
+    try:
+        for index, result in enumerate(results, 1):
+            if result is None:
+                skipped += 1
+            else:
+                labels, classes, has_depth = result
+                counts.update(labels)
+                context.segmentation_classes.update(classes)
+                without_depth += not has_depth
+            if index % 100 == 0:
+                print(f"{index}/{len(paths)} frames, {time.time() - started:.0f} s")
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+    if without_depth:
+        print(f"{without_depth} frame(s) have no depth image: no depth PNG and no pitch for them.")
 
     for step in steps:
         finish = getattr(step, "finish", None)

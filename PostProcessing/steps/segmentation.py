@@ -15,6 +15,8 @@ Writes per frame:
 """
 import math
 
+import numpy as np
+
 from lib import field, png
 
 _NEAR = 0.05
@@ -63,7 +65,7 @@ def _clip_near(polygon):
 
 
 def _fill_polygon(mask, points):
-    width, height = mask.width, mask.height
+    height, width = mask.shape
     top = max(0, int(math.floor(min(p[1] for p in points))))
     bottom = min(height - 1, int(math.ceil(max(p[1] for p in points))))
     for y in range(top, bottom + 1):
@@ -78,17 +80,16 @@ def _fill_polygon(mask, points):
             start = max(0, int(math.floor(left)))
             end = min(width - 1, int(math.ceil(right)))
             if start <= end:
-                row = y * width
-                mask.pixels[row + start:row + end + 1] = b"\xff" * (end - start + 1)
+                mask[y, start:end + 1] = 255
 
 
 def _draw_line(mask, start, end):
     steps = int(max(abs(end[0] - start[0]), abs(end[1] - start[1]))) + 1
-    for i in range(steps + 1):
-        x = int(start[0] + (end[0] - start[0]) * i / steps)
-        y = int(start[1] + (end[1] - start[1]) * i / steps)
-        if 0 <= x < mask.width and 0 <= y < mask.height:
-            mask.pixels[y * mask.width + x] = 255
+    i = np.arange(steps + 1)
+    x = (start[0] + (end[0] - start[0]) * i / steps).astype(np.int64)
+    y = (start[1] + (end[1] - start[1]) * i / steps).astype(np.int64)
+    inside = (x >= 0) & (x < mask.shape[1]) & (y >= 0) & (y < mask.shape[0])
+    mask[y[inside], x[inside]] = 255
 
 
 def _draw_shape(frame, mask, shape, ground_y):
@@ -130,43 +131,27 @@ def _pitch_mask(frame, layout, ground_y, tolerance):
     depth = frame.depth()
     if depth is None:
         return None
-    width, height, values = depth
+    height, width = depth.shape
     min_x, max_x, min_z, max_z = layout.pitch_bounds()
     right, up, forward = frame.camera_axes()
     px, py, pz = frame.capture["position"]
     fx, fy = frame.capture["matrix"][0], frame.capture["matrix"][4]
 
     # World direction of each pixel's ray, scaled so that depth * direction = offset from the camera.
-    column = [((u + 0.5) / width - 0.5) * 2 / fx for u in range(width)]
-    mask = bytearray(width * height)
-    for v in range(height):
-        b = (0.5 - (v + 0.5) / height) * 2 / fy
-        row_x = forward[0] + b * up[0]
-        row_y = forward[1] + b * up[1]
-        row_z = forward[2] + b * up[2]
-        start = v * width
-        for u in range(width):
-            d = values[start + u]
-            if d <= 0:
-                continue
-            a = column[u]
-            if abs(py + d * (row_y + a * right[1]) - ground_y) > tolerance:
-                continue
-            x = px + d * (row_x + a * right[0])
-            z = pz + d * (row_z + a * right[2])
-            if min_x <= x <= max_x and min_z <= z <= max_z:
-                mask[start + u] = 255
-    return png.Image(width, height, 1, mask)
+    a = ((np.arange(width) + 0.5) / width - 0.5) * 2 / fx
+    b = ((0.5 - (np.arange(height) + 0.5) / height) * 2 / fy)[:, None]
+    d = depth.astype(np.float64)
+    y = py + d * ((forward[1] + b * up[1]) + a * right[1])
+    x = px + d * ((forward[0] + b * up[0]) + a * right[0])
+    z = pz + d * ((forward[2] + b * up[2]) + a * right[2])
+    on_pitch = (d > 0) & (np.abs(y - ground_y) <= tolerance)
+    on_pitch &= (x >= min_x) & (x <= max_x) & (z >= min_z) & (z <= max_z)
+    return np.where(on_pitch, 255, 0).astype(np.uint8)
 
 
-_warned = []
-
-
-def _line_pixels(mask):
-    position = mask.pixels.find(255)
-    while position != -1:
-        yield position
-        position = mask.pixels.find(255, position + 1)
+def _has_color(image, color):
+    """Pixels whose RGB equals color."""
+    return np.all(image[:, :, :3] == np.asarray(color, dtype=np.uint8), axis=2)
 
 
 def process(frame, context):
@@ -174,49 +159,30 @@ def process(frame, context):
     ground_y = context.settings["field"]["ground_y"]
     layout = field.load(context)
 
-    lines = png.Image(frame.width, frame.height, 1, bytearray(frame.width * frame.height))
+    lines = np.zeros((frame.height, frame.width), dtype=np.uint8)
     for shape in _shapes(layout, settings["circle_segments"]):
         _draw_shape(frame, lines, shape, ground_y)
 
-    semantic = frame.semantic_mask()
-    channels = semantic.channels
-    result = png.Image(frame.width, frame.height, channels, bytearray(semantic.pixels))
-
-    removed = set()
+    result = frame.semantic_mask().copy()
     for name, color in frame.semantic_classes().items():
         if name in settings["remove_labels"]:
-            removed.add(tuple(color[:3]))
+            result[_has_color(result, color[:3]), :3] = 0
         else:
             context.segmentation_classes[name] = list(color[:3])
-    if removed:
-        for start in range(0, len(result.pixels), channels):
-            if tuple(result.pixels[start:start + 3]) in removed:
-                result.pixels[start:start + 3] = b"\x00\x00\x00"
 
-    line_color = bytes(settings["line_color"])
+    # Labeled objects win over the lines.
     context.segmentation_classes[settings["line_label"]] = list(settings["line_color"])
-    for position in _line_pixels(lines):
-        start = position * channels
-        if any(result.pixels[start:start + 3]):
-            lines.pixels[position] = 0
-        else:
-            result.pixels[start:start + 3] = line_color
+    lines[result[:, :, :3].any(axis=2)] = 0
+    result[lines > 0, :3] = settings["line_color"]
 
+    # Lines win over the pitch; the pitch mask keeps the lines but not labeled objects.
     pitch = _pitch_mask(frame, layout, ground_y, settings["pitch_tolerance_m"])
-    if pitch is None:
-        if not _warned:
-            print("No depth images in this run: the pitch is left out of the segmentation.")
-            _warned.append(True)
-    else:
-        pitch_color = bytes(settings["pitch_color"])
+    if pitch is not None:
         context.segmentation_classes[settings["pitch_label"]] = list(settings["pitch_color"])
-        for position in _line_pixels(pitch):
-            start = position * channels
-            color = result.pixels[start:start + 3]
-            if not any(color):
-                result.pixels[start:start + 3] = pitch_color
-            elif color != line_color:
-                pitch.pixels[position] = 0  # covered by a labeled object
+        on_pitch = pitch > 0
+        empty = ~result[:, :, :3].any(axis=2)
+        pitch[on_pitch & ~empty & ~_has_color(result, settings["line_color"])] = 0
+        result[on_pitch & empty, :3] = settings["pitch_color"]
         png.write(context.path("pitch", frame, ".png"), pitch)
 
     png.write(context.path("segmentation", frame, ".png"), result)
@@ -226,12 +192,8 @@ def process(frame, context):
 
 
 def _write_check(frame, segmentation, context):
-    image = png.read(frame.image_path)
-    sc, ic = segmentation.channels, image.channels
-    for i in range(frame.width * frame.height):
-        s = i * sc
-        color = segmentation.pixels[s:s + 3]
-        if any(color):
-            p = i * ic
-            image.pixels[p:p + 3] = bytes((a + b) // 2 for a, b in zip(image.pixels[p:p + 3], color))
+    image = png.read(frame.image_path).copy()
+    colored = segmentation[:, :, :3].any(axis=2)
+    blend = (image[:, :, :3].astype(np.uint16) + segmentation[:, :, :3]) // 2
+    image[colored, :3] = blend[colored].astype(np.uint8)
     png.write(context.path("checks/segmentation", frame, ".png"), image)

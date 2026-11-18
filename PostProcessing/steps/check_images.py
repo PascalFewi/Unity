@@ -14,26 +14,20 @@ _COLORS = {
 
 
 def _draw_box(image, box, color):
-    x0, y0 = (int(v) for v in box["origin"])
-    x1 = min(image.width - 1, x0 + int(box["dimension"][0]))
-    y1 = min(image.height - 1, y0 + int(box["dimension"][1]))
-    for x in range(x0, x1 + 1):
-        _set(image, x, y0, color)
-        _set(image, x, y1, color)
-    for y in range(y0, y1 + 1):
-        _set(image, x0, y, color)
-        _set(image, x1, y, color)
-
-
-def _set(image, x, y, color):
-    start = (y * image.width + x) * image.channels
-    image.pixels[start:start + 3] = bytes(color)
+    height, width = image.shape[:2]
+    x0, y0 = (max(0, int(v)) for v in box["origin"])
+    x1 = min(width - 1, int(box["origin"][0]) + int(box["dimension"][0]))
+    y1 = min(height - 1, int(box["origin"][1]) + int(box["dimension"][1]))
+    if x0 > x1 or y0 > y1:
+        return
+    image[[y0, y1], x0:x1 + 1, :3] = color
+    image[y0:y1 + 1, [x0, x1], :3] = color
 
 
 def process(frame, context):
     if not context.is_check_frame(frame):
         return
-    image = png.read(frame.image_path)
+    image = png.read(frame.image_path).copy()
     for box in frame.boxes:
         _draw_box(image, box, _COLORS.get(box["labelName"], (200, 200, 200)))
     png.write(context.path("checks/boxes", frame, ".png"), image)

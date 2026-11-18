@@ -4,13 +4,17 @@ Steps that run on a finished Unity Perception (SOLO) run. They only read the SOL
 
 ## Run
 
-Needs Python 3.8 or newer. Nothing else has to be installed.
+Needs Python 3.8 or newer with numpy and Pillow, for example a conda environment:
 
 ```
+conda create -n nomadz-post python=3.12 numpy pillow
+conda activate nomadz-post
 python run_all.py <solo folder>
 ```
 
 Results go to `<solo folder>_post`. If that folder already exists, add `--overwrite` to replace it. Use `--out <folder>` to choose another output folder.
+
+Frames are processed in parallel, one process per CPU thread. `--workers N` sets the number of processes; `--workers 1` runs everything in one process, which is easier to debug. 1000 frames at 1158×1857 take about 40 s on 24 threads.
 
 ## Output
 

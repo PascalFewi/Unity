@@ -4,6 +4,8 @@ Every crossing is projected into the image with the camera pose saved in the
 frame. It gets a fixed-size box unless it is outside the image or mostly covered
 by a labeled object.
 """
+import numpy as np
+
 from lib import field
 
 
@@ -13,14 +15,17 @@ def _is_covered(frame, u, v, settings):
         return False
     half = settings["cover_window_px"] // 2
     ignored = set(settings["replace_labels"])
-    total = covered = 0
-    for y in range(max(0, int(v) - half), min(mask.height, int(v) + half + 1)):
-        for x in range(max(0, int(u) - half), min(mask.width, int(u) + half + 1)):
-            total += 1
-            color = mask.pixel(x, y)
-            if any(color[:3]) and frame.instance_label(color) not in ignored:
-                covered += 1
-    return total > 0 and covered / total > settings["max_covered_fraction"]
+    window = mask[max(0, int(v) - half):int(v) + half + 1, max(0, int(u) - half):int(u) + half + 1]
+    total = window.shape[0] * window.shape[1]
+    if total == 0:
+        return False
+    labels = frame.instance_labels()
+    colors, counts = np.unique(window.reshape(-1, window.shape[2]), axis=0, return_counts=True)
+    covered = sum(
+        int(n) for color, n in zip(colors, counts)
+        if color[:3].any() and labels.get(tuple(int(c) for c in color)) not in ignored
+    )
+    return covered / total > settings["max_covered_fraction"]
 
 
 def process(frame, context):

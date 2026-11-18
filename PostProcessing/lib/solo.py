@@ -66,7 +66,7 @@ class Frame:
         return self.camera_to_pixel(camera)
 
     def depth(self):
-        """Depth image as (width, height, floats in meters, 0 = nothing hit), or None if this run has none."""
+        """Depth image (height x width, float32 meters, 0 = nothing hit), or None if this run has none."""
         if self.depth_path is None:
             return None
         if self._depth is None:
@@ -83,25 +83,22 @@ class Frame:
         return {i["labelName"]: i["pixelValue"] for i in self._semantic_annotation.get("instances", [])}
 
     def semantic_mask(self):
-        """Semantic segmentation image."""
+        """Semantic segmentation image (height x width x 4, uint8)."""
         if self._semantic_mask is None:
             path = os.path.join(self.folder, self._semantic_annotation["filename"])
             self._semantic_mask = png.read(path)
         return self._semantic_mask
 
     def instance_mask(self):
-        """Instance segmentation image, or None if this run has none."""
+        """Instance segmentation image (height x width x 4, uint8), or None if this run has none."""
         if self._instance_mask is None and self._instance_annotation is not None:
             path = os.path.join(self.folder, self._instance_annotation["filename"])
             self._instance_mask = png.read(path)
         return self._instance_mask
 
-    def instance_label(self, color):
-        """Label of an instance colour (r, g, b, a) from the instance mask."""
-        for instance in self._instance_annotation.get("instances", []):
-            if tuple(instance["color"]) == tuple(color):
-                return instance["labelName"]
-        return None
+    def instance_labels(self):
+        """Instance colours (r, g, b, a) -> label name."""
+        return {tuple(i["color"]): i["labelName"] for i in self._instance_annotation.get("instances", [])}
 
 
 def _rotate_inverse(q, v):

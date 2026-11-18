@@ -1,15 +1,15 @@
 """Minimal reader for the EXR files Unity Perception writes (scanline, ZIP or no compression)."""
-import array
 import struct
-import sys
 import zlib
+
+import numpy as np
 
 _HALF, _FLOAT = 1, 2
 _NO_COMPRESSION, _ZIPS, _ZIP = 0, 2, 3
 
 
 def read_channel(path, name="R"):
-    """One channel of an EXR file as (width, height, list of floats), row by row from the top."""
+    """One channel of an EXR file as a float32 array (height x width), rows from the top."""
     with open(path, "rb") as f:
         data = f.read()
     if data[:4] != b"\x76\x2f\x31\x01":
@@ -23,32 +23,30 @@ def read_channel(path, name="R"):
     lines_per_block = {_NO_COMPRESSION: 1, _ZIPS: 1, _ZIP: 16}.get(compression)
     if lines_per_block is None:
         raise ValueError(f"{path}: unsupported EXR compression {compression}")
-    if name not in [c[0] for c in channels]:
+    names = [c[0] for c in channels]
+    if name not in names:
         raise ValueError(f"{path}: no channel {name}")
+
+    # Each line holds every channel in turn (sorted by name), one value per pixel.
+    sizes = [2 if kind == _HALF else 4 for _, kind in channels]
+    index = names.index(name)
+    before = sum(sizes[:index]) * width
+    kind = "<f2" if channels[index][1] == _HALF else "<f4"
+    line_bytes = sum(sizes) * width
 
     blocks = (height + lines_per_block - 1) // lines_per_block
     offsets = struct.unpack(f"<{blocks}Q", data[pos:pos + 8 * blocks])
-    values = array.array("f", bytes(4 * width * height))
-
+    values = np.empty((height, width), dtype=np.float32)
     for offset in offsets:
         y, size = struct.unpack("<ii", data[offset:offset + 8])
         chunk = data[offset + 8:offset + 8 + size]
         lines = min(lines_per_block, y1 - y + 1)
         if compression != _NO_COMPRESSION:
             chunk = _unzip(chunk)
-        # Each line holds every channel in turn, channels sorted by name.
-        start = 0
-        for line in range(lines):
-            for channel, kind in channels:
-                length = width * (2 if kind == _HALF else 4)
-                if channel == name:
-                    row = array.array("e" if kind == _HALF else "f", chunk[start:start + length])
-                    if sys.byteorder == "big":
-                        row.byteswap()
-                    first = (y - y0 + line) * width
-                    values[first:first + width] = array.array("f", row)
-                start += length
-    return width, height, values
+        rows = np.frombuffer(chunk, dtype=np.uint8, count=lines * line_bytes).reshape(lines, line_bytes)
+        part = rows[:, before:before + sizes[index] * width]
+        values[y - y0:y - y0 + lines] = np.ascontiguousarray(part).view(kind)
+    return values
 
 
 def _read_header(data, pos):
@@ -74,13 +72,13 @@ def _channels(chlist):
 
 
 def _unzip(chunk):
-    raw = zlib.decompress(chunk)
-    # Undo the delta predictor, then the split into even and odd bytes.
-    raw = bytearray(raw)
-    for i in range(1, len(raw)):
-        raw[i] = (raw[i - 1] + raw[i] - 128) & 255
+    raw = np.frombuffer(zlib.decompress(chunk), dtype=np.uint8).copy()
+    # Undo the delta predictor (running sum minus 128 per byte, wrapping at 256),
+    # then the split into even and odd bytes.
+    raw[1:] -= 128
+    raw = np.cumsum(raw, dtype=np.uint8)
     half = (len(raw) + 1) // 2
-    out = bytearray(len(raw))
+    out = np.empty_like(raw)
     out[0::2] = raw[:half]
     out[1::2] = raw[half:]
-    return bytes(out)
+    return out.tobytes()
